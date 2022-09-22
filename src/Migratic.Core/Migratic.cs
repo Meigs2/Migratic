@@ -10,37 +10,29 @@ namespace Migratic.Core;
 public sealed class Migratic
 {
     private readonly MigraticConfiguration _config;
-    private readonly IServiceCollection _services = new ServiceCollection();
     private readonly ILogger _logger;
-        
+
     // expose a function constructor that takes in an action to configure the migrator
-    public static Migratic Configure(Action<MigraticConfiguration>? configure)
+    public static MigraticBuilder Create()
     {
-        var migraticConfiguration = new MigraticConfiguration();
-        configure?.Invoke(migraticConfiguration);
-        return new Migratic(migraticConfiguration);
+        return new MigraticBuilder(new ServiceCollection());
     }
 
-    private Migratic(MigraticConfiguration config, ILogger logger) : this(config)
+    public Migratic(MigraticConfiguration config, ILogger logger)
     {
         _logger = logger;
-    }
-
-    private Migratic(MigraticConfiguration configuration)
-    {
-        _config = configuration;
+        _config = config;
     }
 
     public Exceptional Migrate()
     {
         // get all the migrations
-        var migrations = _config.MigrationScriptProviders
-            .SelectMany(provider => provider.GetMigrations())
-            .OrderBy(migration => migration.Version)
-            .ToList();
-        
+        var migrations = _config.MigrationScriptProviders.SelectMany(provider => provider.GetMigrations())
+                                .OrderBy(migration => migration.Version)
+                                .ToList();
         return Exceptional.Success;
     }
+
     public Exceptional Baseline() { return Exceptional.Success; }
     public Exceptional Repair() { return Exceptional.Success; }
     public Exceptional Clean() { return Exceptional.Success; }
@@ -49,20 +41,51 @@ public sealed class Migratic
     public void Info() { }
 }
 
-public static class MigraticExtensions
+public class MigraticBuilder
 {
-    public static IServiceCollection AddMigratic(this IServiceCollection services, Action<MigraticConfiguration>? configure)
+    private readonly IServiceCollection _services;
+    private MigraticConfiguration? _configuration;
+    private ILogger? _logger;
+    internal MigraticBuilder(IServiceCollection services) { _services = services; }
+
+    public MigraticBuilder WithLogger(ILogger logger)
+    {
+        _logger = logger;
+        return this;
+    }
+
+    public MigraticBuilder WithConfiguration(Action<MigraticConfiguration>? configure)
     {
         var migraticConfiguration = new MigraticConfiguration();
         configure?.Invoke(migraticConfiguration);
-        services.AddSingleton(migraticConfiguration);
+        _configuration = migraticConfiguration;
+        return this;
+    }
+
+    public Option<Migratic> Build()
+    {
+        _configuration ??= new MigraticConfiguration();
+        _logger ??= new ConsoleLogger();
+        _services.AddSingleton(_configuration);
+        _services.AddSingleton(_logger);
+        _services.AddSingleton<Migratic>();
+        return _services?.BuildServiceProvider()?.GetService<Migratic>() ?? Option<Migratic>.None;
+    }
+}
+
+public static class MigraticExtensions
+{
+    public static IServiceCollection AddMigratic(this IServiceCollection services, Action<MigraticBuilder>? configure)
+    {
+        var migraticBuilder = new MigraticBuilder(services);
+        if (configure != null) { configure(migraticBuilder); }
+        else { migraticBuilder.Build(); }
+
+        configure?.Invoke(migraticBuilder);
+        services.AddSingleton(migraticBuilder);
         services.AddSingleton<Migratic>();
-        
-        if (services.All(x => x.ServiceType != typeof(ILogger)))
-        {
-            services.AddLogging();
-        }
-        
+        if (services.All(x => x.ServiceType != typeof(ILogger))) { services.AddLogging(); }
+
         return services;
     }
 }
