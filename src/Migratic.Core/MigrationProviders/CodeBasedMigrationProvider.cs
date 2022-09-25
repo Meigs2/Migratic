@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using Functional.Core;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -23,13 +24,13 @@ public class CodeBasedMigrationProvider : MigrationProvider
 
     public override string ProviderName => "Code Based";
 
-    public override IEnumerable<Migration> GetMigrations()
+    public override Task<Result<IEnumerable<Migration>>> GetMigrations()
     {
         // get all migrations from the service provider that implement ICodeBasedMigration
         var migrations = _serviceProvider.GetServices<ICodeBasedMigration>();
 
         // return the migrations as a list of Migration objects
-        return migrations.Bind(m =>
+        var a = migrations.Bind(m =>
                           {
                               var className = m.GetType().Name;
                               var migrationType = MigrationType.FromString(className, Configuration);
@@ -48,5 +49,7 @@ public class CodeBasedMigrationProvider : MigrationProvider
                               return migration.ToSome();
                           })
                          .Map(x => x).ToList();
+
+        return Result<IEnumerable<Migration>>.Success(a).ToTask();
     }
 }

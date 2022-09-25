@@ -2,6 +2,7 @@
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Functional.Core;
 
 namespace Migratic.Core;
 
@@ -10,10 +11,10 @@ public class FileBasedMigrationProvider : MigrationProvider
     public FileBasedMigrationProvider(MigraticConfiguration configuration) : base(configuration) { }
     public override string ProviderName => "File Based";
 
-    public override IEnumerable<Migration> GetMigrations()
+    public override Task<Result<IEnumerable<Migration>>> GetMigrations()
     {
-        // the configuration can specify multiple directories to search for migrations
-        // The directory names could be absolute or relative to the current directory
+        var result = new List<Migration>();
+        
         foreach (var directory in Configuration.SearchPaths)
         {
             var path = Path.IsPathRooted(directory)
@@ -45,9 +46,10 @@ public class FileBasedMigrationProvider : MigrationProvider
                 // create the migration
                 var migration = new Migration(migrationType.Value, migrationVersion.Value, fileName, migrationScript);
 
-                // yield the migration
-                yield return migration;
+                result.Add(migration);
             }
         }
+
+        return Result<IEnumerable<Migration>>.Success(result).ToTask();
     }
 }

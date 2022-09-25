@@ -3,9 +3,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Threading.Tasks;
 using Functional.Core;
 using Microsoft.Extensions.DependencyInjection;
 using Migratic.Core.Abstractions;
+using Migratic.Core.Models;
 
 namespace Migratic.Core;
 
@@ -72,5 +74,30 @@ public class PostgresDatabaseProvider : IMigraticDatabaseProvider
 {
     public PostgresDatabaseProvider()
     {
+    }
+
+    public IEnumerable<MigraticHistory> GetHistory()
+    {
+        throw new NotImplementedException();
+    }
+
+    public bool HistoryTableExists()
+    {
+        throw new NotImplementedException();
+    }
+
+    public bool HistoryTableSchemaExists()
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task<Result> CreateHistoryTableSchema()
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task<Result> CreateHistoryTable()
+    {
+        throw new NotImplementedException();
     }
 }

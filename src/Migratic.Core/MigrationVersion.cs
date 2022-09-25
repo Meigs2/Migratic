@@ -99,14 +99,14 @@ public record MigrationVersion : IComparable<MigrationVersion>
         return From(major, Option.None, Option.None);
     }
     
-    public static Option<MigrationVersion> From(int major, int minor)
+    public static Option<MigrationVersion> From(int major, int? minor)
     {
-        return From(major, minor, Option.None);
+        return From(major, minor ?? Option<int>.None, Option.None);
     }
     
-    public static Option<MigrationVersion> From(int major, int minor, int patch)
+    public static Option<MigrationVersion> From(int major, int? minor, int? patch)
     {
-        return From(major, minor.ToOption(), patch.ToOption());
+        return From(major, minor ?? Option<int>.None, patch ?? Option<int>.None);
     }
     
     public int CompareTo(MigrationVersion other)

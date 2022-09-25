@@ -1,4 +1,5 @@
 ﻿using System;
+using Functional.Core;
 
 namespace Migratic.Core.Models;
 
@@ -15,4 +16,6 @@ public class MigraticHistory
     public DateTime AppliedAt { get; set; }
     public string AppliedBy { get; set; }
     public bool Success { get; set; }
+    
+    public Option<MigrationVersion> Version => MigrationVersion.From(Major, Minor, Patch);
 }

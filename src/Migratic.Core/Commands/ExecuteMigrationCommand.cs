@@ -7,9 +7,9 @@ using MediatR;
 
 namespace Migratic.Core.Commands;
 
-public record ExecuteMigrationCommand : IRequest<Result<Migration>>
+public record ExecuteMigrationCommand(Migration Migration) : IRequest<Result<Migration>>
 {
-    public Migration Migration { get; internal set; }
+    public Migration Migration { get; set; } = Migration;
 }
 
 internal class ExecuteMigrationCommandHandler : IRequestHandler<ExecuteMigrationCommand, Result<Migration>>
