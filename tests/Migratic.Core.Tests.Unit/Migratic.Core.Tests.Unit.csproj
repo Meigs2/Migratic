@@ -19,7 +19,6 @@
 
     <ItemGroup>
       <ProjectReference Include="..\..\src\Migratic.Core\Migratic.Core.csproj" />
-      <ProjectReference Include="..\Migratic.Core\Migratic.Core.csproj" />
     </ItemGroup>
 
 </Project>
