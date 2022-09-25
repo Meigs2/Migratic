@@ -22,7 +22,7 @@ public record MigraticConfiguration
     protected internal IEnumerable<Assembly> EmbeddedResourceMigrationsAssemblies { get; set; } = new List<Assembly>();
     protected internal IEnumerable<Assembly> CodeBasedMigrationsAssemblies { get; set; } = new List<Assembly>();
     
-    public string Table { get; set; } = "Migrations";
+    public string Table { get; set; } = "Prime.Migrations";
     public string Schema { get; set; } = "system";
     public TransactionStrategy TransactionStrategy { get; set; } = TransactionStrategy.PerMigration;
     public bool IsClustered { get; set; } = true;

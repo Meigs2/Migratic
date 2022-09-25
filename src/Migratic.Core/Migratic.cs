@@ -24,18 +24,18 @@ public sealed class Migratic
         _config = config;
     }
 
-    public Exceptional Migrate()
+    public Result Migrate()
     {
         // get all the migrations
         var migrations = _config.MigrationScriptProviders.SelectMany(provider => provider.GetMigrations())
                                 .OrderBy(migration => migration.Version)
                                 .ToList();
-        return Exceptional.Success;
+        return Result.Success;
     }
 
-    public Exceptional Baseline() { return Exceptional.Success; }
-    public Exceptional Repair() { return Exceptional.Success; }
-    public Exceptional Clean() { return Exceptional.Success; }
+    public Result Baseline() { return Result.Success; }
+    public Result Repair() { return Result.Success; }
+    public Result Clean() { return Result.Success; }
     public void Status() { }
     public void Version() { }
     public void Info() { }

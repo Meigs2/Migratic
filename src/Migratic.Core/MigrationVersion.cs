@@ -21,7 +21,7 @@ public record MigrationVersion : IComparable<MigrationVersion>
     private static Option<MigrationVersion> From(int major, Option<int> minor, Option<int> patch)
     {
         return Validate(new MigrationVersion(major, minor, patch))
-           .Match(Invalid: _ => Option<MigrationVersion>.None, Valid: version => version);
+           .Match(invalid: _ => Option<MigrationVersion>.None, valid: version => version);
     }
 
     public static Validation<MigrationVersion> Validate(MigrationVersion migrationVersion)

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Data.Common;
 using System.Security.Cryptography;
 using System.Text;
@@ -49,7 +50,7 @@ namespace Migratic.Core
             return sb.ToString();
         }
 
-        public async Task<Exceptional<Migration>> Execute(DbCommand command)
+        public async Task<Result<Migration>> Execute(DbCommand command)
         {
             try
             {
