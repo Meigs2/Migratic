@@ -13,4 +13,6 @@ public interface IMigraticDatabaseProvider
     public bool HistoryTableSchemaExists();
     Task<Result> CreateHistoryTableSchema();
     Task<Result> CreateHistoryTable();
+    Task<Result> InsertHistoryEntry(Migration migration);
+    Task<Result> InsertHistoryEntries(IEnumerable<Migration> migrations);
 }

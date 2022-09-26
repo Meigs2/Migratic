@@ -115,5 +115,4 @@ public record MigrationVersion : IComparable<MigrationVersion>
         if (this < other) return -1;
         return 0;
     }
-
 }

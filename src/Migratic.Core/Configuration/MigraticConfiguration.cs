@@ -100,4 +100,14 @@ public class PostgresDatabaseProvider : IMigraticDatabaseProvider
     {
         throw new NotImplementedException();
     }
+
+    public Task<Result> InsertHistoryEntry(Migration migration)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task<Result> InsertHistoryEntries(IEnumerable<Migration> migrations)
+    {
+        throw new NotImplementedException();
+    }
 }

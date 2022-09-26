@@ -34,31 +34,51 @@ public sealed class Migratic
 
     public async Task<Result> Migrate()
     {
-        if (!_databaseProvider.HistoryTableSchemaExists())
+        var initializationResult = await InitializeMigraticHistoryTableIfNotExisits(_databaseProvider, _logger);
+        if (initializationResult.IsFailure)
         {
-            _logger.LogInformation("No history history table schema was found. Attempting to create it");
-            var result = await _databaseProvider.CreateHistoryTableSchema();
-            if (result.IsFailure)
-            {
-                _logger.LogError("Failed to create history table schema");
-                _logger.LogError(result.ToString());
-                return result;
-            }
+            return initializationResult.WithError("Unable to initialize migratic history table and/or schemas.");
         }
 
-        if (!_databaseProvider.HistoryTableExists())
+        var providedMigrations = await GetMigrationsFromProviders();
+        if (providedMigrations.IsFailure)
         {
-            _logger.LogInformation("No history table was found. Attempting to create it");
-            var result = await _databaseProvider.CreateHistoryTable();
-            if (result.IsFailure)
-            {
-                _logger.LogError("Failed to create history table");
-                _logger.LogError(result.ToString());
-                return result;
-            }
+            return providedMigrations.WithError("Unable to get migrations from providers.");
         }
 
-        // get all migrations that have not been applied
+        var orderedProvidedMigrations = providedMigrations.Value.OrderBy(m => m.Version).ToList();
+        if (orderedProvidedMigrations.Count == 0)
+        {
+            _logger.LogInformation("No migrations found");
+            return Result.Success;
+        }
+
+        var history = _databaseProvider.GetHistory();
+        var orderedMigrationsToApply = GetMigrationsToApply(orderedProvidedMigrations, history).ToList();
+        if (!orderedMigrationsToApply.Any())
+        {
+            _logger.LogInformation("No migrations to apply");
+            return Result.Success;
+        }
+
+        _logger.LogInformation("Applying {Count} migrations", orderedMigrationsToApply.Count());
+        _logger.LogInformation("Using transaction strategy: {ConfigTransactionStrategy}", _config.TransactionStrategy);
+        
+        if (_config.TransactionStrategy == TransactionStrategy.AllOrNothing)
+        {
+            return await ExecuteAllOrNothingMigration(orderedMigrationsToApply, _databaseProvider);
+        }
+
+        if (_config.TransactionStrategy == TransactionStrategy.PerMigration)
+        {
+            return await ExecutePerMigrationStrategy(orderedMigrationsToApply, _databaseProvider);
+        }
+
+        return new InvalidOperationException("Invalid transaction strategy");
+    }
+
+    private async Task<Result<List<Migration>>> GetMigrationsFromProviders()
+    {
         var providedMigrations = new List<Migration>();
         foreach (var provider in _config.MigrationScriptProviders)
         {
@@ -67,64 +87,86 @@ public sealed class Migratic
             {
                 _logger.LogError("Failed to get migrations from provider");
                 _logger.LogError(providerMigration.ToString());
-            }
-            else { providedMigrations.AddRange(providerMigration.Value); }
-        }
-
-        providedMigrations = providedMigrations.OrderBy(m => m.Version).ToList();
-        if (providedMigrations.Count == 0)
-        {
-            _logger.LogInformation("No migrations found");
-            return Result.Success;
-        }
-
-        var history = _databaseProvider.GetHistory();
-        var unappliedMigrations = UnappliedMigrations(providedMigrations, history).ToList();
-        
-        if (!unappliedMigrations.Any())
-        {
-            _logger.LogInformation("No migrations to apply");
-            return Result.Success;
-        }
-        
-        _logger.LogInformation("Applying {Count} migrations", unappliedMigrations.Count());
-        _logger.LogInformation("Using transaction strategy: {ConfigTransactionStrategy}", _config.TransactionStrategy);
-        
-        if (_config.TransactionStrategy == TransactionStrategy.AllOrNothing)
-        {
-            using var scope = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled);
-            foreach (var migration in providedMigrations)
-            {
-                var result = await MigrateInternal(migration);
-                if (result.IsFailure)
-                    return result.WithError($"{migration.Description} failed, rolling back all migrations.");
-                scope.Complete();
+                return await Result<List<Migration>>.Failure("Failed to get migrations from provider").ToTask();
             }
 
-            return Result.Success;
+            providedMigrations.AddRange(providerMigration.Value);
         }
 
-        if (_config.TransactionStrategy == TransactionStrategy.PerMigration)
-        {
-            var i = 0;
-            foreach (var migration in providedMigrations)
-            {
-                using var scope = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled);
-                var result = await MigrateInternal(migration);
-                if (result.IsFailure)
-                    return result.WithError(
-                        $"Migration {migration.Description} failed, rolling back. {i} migration(s) executed successfully.");
-                scope.Complete();
-                i++;
-            }
-
-            return Result.Success;
-        }
-
-        return new InvalidOperationException("Invalid transaction strategy");
+        return await Result<List<Migration>>.Success(providedMigrations).ToTask();
     }
 
-    private IEnumerable<Migration> UnappliedMigrations(IEnumerable<Migration> providedMigrations,
+    private async Task<Result> ExecuteAllOrNothingMigration(List<Migration> migrationsToApply, IMigraticDatabaseProvider databaseProvider)
+    {
+        // Use one transaction for all migrations. If one fails, rollback all.
+        using var scope = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled);
+        foreach (var migration in migrationsToApply)
+        {
+            var result = await MigrateInternal(migration, databaseProvider);
+            if (result.IsFailure)
+                return result.WithError($"{migration.Description} failed, rolling back all migrations.");
+        }
+
+        var insertionResult = await databaseProvider.InsertHistoryEntries(migrationsToApply);
+        if (insertionResult.IsFailure) return insertionResult.WithError("Failed to insert history entries");
+        scope.Complete();
+        return Result.Success;
+    }
+    
+    private async Task<Result> ExecutePerMigrationStrategy(List<Migration> providedMigrations, IMigraticDatabaseProvider databaseProvider)
+    {
+        var i = 0;
+        foreach (var migration in providedMigrations)
+        {
+            // Use one transaction per migration. If one fails, rollback that migration.
+            using var scope = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled);
+            var result = await MigrateInternal(migration, databaseProvider);
+            if (result.IsFailure)
+            {
+                _logger.LogError("Failed to apply migration {MigrationVersion}", migration.Version);
+                return result.WithError(
+                    $"Migration {migration.Description} failed, rolling back. {i} migration(s) executed successfully.");
+            }
+            var insertionResult = await databaseProvider.InsertHistoryEntry(migration);
+            if (insertionResult.IsFailure) return insertionResult.WithError("Failed to insert history entries");
+            scope.Complete();
+            i++;
+        }
+
+        return Result.Success;
+    }
+
+    private async Task<Result> InitializeMigraticHistoryTableIfNotExisits(IMigraticDatabaseProvider migraticDatabaseProvider,
+        ILogger logger)
+    {
+        if (!migraticDatabaseProvider.HistoryTableSchemaExists())
+        {
+            logger.LogInformation("No history history table schema was found. Attempting to create it");
+            var result = await migraticDatabaseProvider.CreateHistoryTableSchema();
+            if (result.IsFailure)
+            {
+                logger.LogError("Failed to create history table schema");
+                logger.LogError(result.ToString());
+                return result;
+            }
+        }
+
+        if (!migraticDatabaseProvider.HistoryTableExists())
+        {
+            logger.LogInformation("No history table was found. Attempting to create it");
+            var result = await migraticDatabaseProvider.CreateHistoryTable();
+            if (result.IsFailure)
+            {
+                logger.LogError("Failed to create history table");
+                logger.LogError(result.ToString());
+                return result;
+            }
+        }
+
+        return Result.Success;
+    }
+
+    private IEnumerable<Migration> GetMigrationsToApply(IEnumerable<Migration> providedMigrations,
         IEnumerable<MigraticHistory> history)
     {
         var appliedMigrations = history.Select(h => h.Version);
@@ -132,17 +174,39 @@ public sealed class Migratic
         return maxVersion.IsNone ? providedMigrations : providedMigrations.Where(m => m.Version > maxVersion.Value);
     }
 
-    private async Task<Result<Migration>> MigrateInternal(Migration migration)
+    private async Task<Result<Migration>> MigrateInternal(Migration migration,
+        IMigraticDatabaseProvider migraticDatabaseProvider)
     {
-        return await _mediator.Send(new ExecuteMigrationCommand(migration));
-    }
+        var result = await _mediator.Send(new ExecuteMigrationCommand(migration));
+        if (result.IsFailure)
+        {
+            _logger.LogError("Failed to execute migration");
+            _logger.LogError(result.ToString());
+        }
 
+        return result;
+    }
+    
     public Result Baseline() { return Result.Success; }
     public Result Repair() { return Result.Success; }
     public Result Clean() { return Result.Success; }
-    public void Status() { }
+    public IOrderedEnumerable<MigraticHistory> Status() { }
     public void Version() { }
     public void Info() { }
+    
+    private void LogStatusInTableFormat(IEnumerable<MigraticHistory> history)
+    {
+        // Write a method that prints the status in a table-like format to the console.
+        
+        // Example:
+        // +----------------+----------------+----------------+----------------+----------------+
+        // | Version        | Description    | Applied        | Applied By     | Applied On     |
+        // +----------------+----------------+----------------+----------------+----------------+
+        // | 1              | Create table   | True           | Migratic       | 2021-01-01     |
+        // | 2              | Insert data    | True           | Migratic       | 2021-01-01     |
+        // | 3              | Update data    | False          |                |                |
+        // +----------------+----------------+----------------+----------------+----------------+
+    }
 }
 
 public class MigraticBuilder
