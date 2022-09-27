@@ -1,8 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics.Contracts;
 using System.Linq;
-using System.Net;
 using System.Threading.Tasks;
 using System.Transactions;
 using Functional.Core;
@@ -21,14 +19,16 @@ public sealed class Migratic
     private readonly ILogger _logger;
     private readonly IMediator _mediator;
     private readonly IMigraticDatabaseProvider _databaseProvider;
+    public static MigraticBuilder CreateBuilder() => new(new ServiceCollection());
 
-    // expose a function constructor that takes in an action to configure the migrator
-    public static MigraticBuilder Create() { return new MigraticBuilder(new ServiceCollection()); }
-
-    public Migratic(MigraticConfiguration config, ILogger logger, IMediator mediator)
+    public Migratic(MigraticConfiguration config,
+        ILogger logger,
+        IMediator mediator,
+        IMigraticDatabaseProvider databaseProvider)
     {
         _logger = logger;
         _mediator = mediator;
+        _databaseProvider = databaseProvider;
         _config = config;
     }
 
@@ -63,7 +63,6 @@ public sealed class Migratic
 
         _logger.LogInformation("Applying {Count} migrations", orderedMigrationsToApply.Count());
         _logger.LogInformation("Using transaction strategy: {ConfigTransactionStrategy}", _config.TransactionStrategy);
-        
         if (_config.TransactionStrategy == TransactionStrategy.AllOrNothing)
         {
             return await ExecuteAllOrNothingMigration(orderedMigrationsToApply, _databaseProvider);
@@ -96,13 +95,14 @@ public sealed class Migratic
         return await Result<List<Migration>>.Success(providedMigrations).ToTask();
     }
 
-    private async Task<Result> ExecuteAllOrNothingMigration(List<Migration> migrationsToApply, IMigraticDatabaseProvider databaseProvider)
+    private async Task<Result> ExecuteAllOrNothingMigration(List<Migration> migrationsToApply,
+        IMigraticDatabaseProvider databaseProvider)
     {
         // Use one transaction for all migrations. If one fails, rollback all.
         using var scope = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled);
         foreach (var migration in migrationsToApply)
         {
-            var result = await MigrateInternal(migration, databaseProvider);
+            var result = await MigrateInternal(migration);
             if (result.IsFailure)
                 return result.WithError($"{migration.Description} failed, rolling back all migrations.");
         }
@@ -112,21 +112,23 @@ public sealed class Migratic
         scope.Complete();
         return Result.Success;
     }
-    
-    private async Task<Result> ExecutePerMigrationStrategy(List<Migration> providedMigrations, IMigraticDatabaseProvider databaseProvider)
+
+    private async Task<Result> ExecutePerMigrationStrategy(List<Migration> providedMigrations,
+        IMigraticDatabaseProvider databaseProvider)
     {
         var i = 0;
         foreach (var migration in providedMigrations)
         {
             // Use one transaction per migration. If one fails, rollback that migration.
             using var scope = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled);
-            var result = await MigrateInternal(migration, databaseProvider);
+            var result = await MigrateInternal(migration);
             if (result.IsFailure)
             {
                 _logger.LogError("Failed to apply migration {MigrationVersion}", migration.Version);
                 return result.WithError(
                     $"Migration {migration.Description} failed, rolling back. {i} migration(s) executed successfully.");
             }
+
             var insertionResult = await databaseProvider.InsertHistoryEntry(migration);
             if (insertionResult.IsFailure) return insertionResult.WithError("Failed to insert history entries");
             scope.Complete();
@@ -136,7 +138,8 @@ public sealed class Migratic
         return Result.Success;
     }
 
-    private async Task<Result> InitializeMigraticHistoryTableIfNotExisits(IMigraticDatabaseProvider migraticDatabaseProvider,
+    private async Task<Result> InitializeMigraticHistoryTableIfNotExisits(
+        IMigraticDatabaseProvider migraticDatabaseProvider,
         ILogger logger)
     {
         if (!migraticDatabaseProvider.HistoryTableSchemaExists())
@@ -174,8 +177,7 @@ public sealed class Migratic
         return maxVersion.IsNone ? providedMigrations : providedMigrations.Where(m => m.Version > maxVersion.Value);
     }
 
-    private async Task<Result<Migration>> MigrateInternal(Migration migration,
-        IMigraticDatabaseProvider migraticDatabaseProvider)
+    private async Task<Result<Migration>> MigrateInternal(Migration migration)
     {
         var result = await _mediator.Send(new ExecuteMigrationCommand(migration));
         if (result.IsFailure)
@@ -186,32 +188,26 @@ public sealed class Migratic
 
         return result;
     }
-    
+
     public Result Baseline() { return Result.Success; }
     public Result Repair() { return Result.Success; }
     public Result Clean() { return Result.Success; }
-    public IOrderedEnumerable<MigraticHistory> Status() { }
+    public IEnumerable<MigraticHistory> Status() { return Enumerable.Empty<MigraticHistory>(); }
     public void Version() { }
     public void Info() { }
-    
-    private void LogStatusInTableFormat(IEnumerable<MigraticHistory> history)
-    {
-        // Write a method that prints the status in a table-like format to the console.
-        
-        // Example:
-        // +----------------+----------------+----------------+----------------+----------------+
-        // | Version        | Description    | Applied        | Applied By     | Applied On     |
-        // +----------------+----------------+----------------+----------------+----------------+
-        // | 1              | Create table   | True           | Migratic       | 2021-01-01     |
-        // | 2              | Insert data    | True           | Migratic       | 2021-01-01     |
-        // | 3              | Update data    | False          |                |                |
-        // +----------------+----------------+----------------+----------------+----------------+
-    }
 }
 
-public class MigraticBuilder
+public interface IMigraticBuilder
+{
+    MigraticBuilder WithLogger(ILogger logger);
+    MigraticBuilder Configuration(Action<MigraticConfiguration>? configure);
+    MigraticBuilder DatabaseProvider(IMigraticDatabaseProvider databaseProvider);
+}
+
+public class MigraticBuilder : IMigraticBuilder
 {
     private readonly IServiceCollection _services;
+    private IMigraticDatabaseProvider _databaseProvider;
     private MigraticConfiguration? _configuration;
     private ILogger? _logger;
     internal MigraticBuilder(IServiceCollection services) { _services = services; }
@@ -222,7 +218,7 @@ public class MigraticBuilder
         return this;
     }
 
-    public MigraticBuilder WithConfiguration(Action<MigraticConfiguration>? configure)
+    public MigraticBuilder Configuration(Action<MigraticConfiguration>? configure)
     {
         var migraticConfiguration = new MigraticConfiguration();
         configure?.Invoke(migraticConfiguration);
@@ -230,7 +226,13 @@ public class MigraticBuilder
         return this;
     }
 
-    public Option<Migratic> Build()
+    public MigraticBuilder DatabaseProvider(IMigraticDatabaseProvider databaseProvider)
+    {
+        _databaseProvider = databaseProvider;
+        return this;
+    }
+
+    internal Option<Migratic> Build()
     {
         _configuration ??= new MigraticConfiguration();
         _logger ??= new ConsoleLogger();
@@ -243,17 +245,15 @@ public class MigraticBuilder
 
 public static class MigraticExtensions
 {
-    public static IServiceCollection AddMigratic(this IServiceCollection services, Action<MigraticBuilder>? configure)
+    public static IServiceCollection AddMigratic(this IServiceCollection services, Action<IMigraticBuilder>? configure)
     {
         var migraticBuilder = new MigraticBuilder(services);
         if (configure != null) { configure(migraticBuilder); }
         else { migraticBuilder.Build(); }
 
         configure?.Invoke(migraticBuilder);
-        services.AddSingleton(migraticBuilder);
-        services.AddSingleton<Migratic>();
-        if (services.All(x => x.ServiceType != typeof(ILogger))) { services.AddLogging(); }
-
+        services.AddScoped(s => migraticBuilder.Build().ValueOrThrow());
+        services.AddSingleton<ILogger, ConsoleLogger>();
         return services;
     }
 }
