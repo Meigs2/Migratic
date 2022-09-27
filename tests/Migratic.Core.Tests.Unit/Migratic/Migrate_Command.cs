@@ -13,9 +13,9 @@ namespace Migratic.Core.Tests.Unit.Migratic;
 public class Migrate_Command : MigraticTestsFixtueBase
 {
     // use moq to createa a mock of a basic IMigraticDatabaseProvider
-    private readonly Mock<IMigraticDatabaseProvider> _mockDatabaseProvider = new Mock<IMigraticDatabaseProvider>();
+    private readonly Mock<IMigraticDatabaseProvider> _mockDatabaseProvider = new();
     private readonly ILogger _logger = new ConsoleLogger();
-    private readonly Mock<IMediator> _mediator = new Mock<IMediator>();
+    private readonly Mock<IMediator> _mediator = new();
 
     [Test]
     public void Should_Migrate_To_The_Last_Version()
