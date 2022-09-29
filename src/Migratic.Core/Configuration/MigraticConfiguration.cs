@@ -13,16 +13,16 @@ namespace Migratic.Core;
 
 public record MigraticConfiguration
 {
-    protected internal MigrationVersion StartingVersion { get; set; }
-    protected internal Option<MigrationVersion> TargetVersion { get; set; } = Option.None;
-    protected internal IEnumerable<MigrationProvider> MigrationScriptProviders { get; } = new List<MigrationProvider>();
-    protected internal Encoding FileEncoding { get; set; } = Encoding.UTF8;
-    protected internal Option<TimeSpan> CommandTimeout { get; set; } = Option.None;
+    public MigrationVersion StartingVersion { get; set; }
+    public Option<MigrationVersion> TargetVersion { get; set; } = Option.None;
+    public IEnumerable<IMigrationProvider> MigrationScriptProviders { get; set; } = new List<IMigrationProvider>();
+    public Encoding FileEncoding { get; set; } = Encoding.UTF8;
+    public Option<TimeSpan> CommandTimeout { get; set; } = Option.None;
     
-    protected internal IEnumerable<string> SearchPaths { get; set; } = new List<string>();
-    protected internal IEnumerable<string> SearchPatterns { get; set; }
-    protected internal IEnumerable<Assembly> EmbeddedResourceMigrationsAssemblies { get; set; } = new List<Assembly>();
-    protected internal IEnumerable<Assembly> CodeBasedMigrationsAssemblies { get; set; } = new List<Assembly>();
+    public IEnumerable<string> SearchPaths { get; set; } = new List<string>();
+    public IEnumerable<string> SearchPatterns { get; set; }
+    public IEnumerable<Assembly> EmbeddedResourceMigrationsAssemblies { get; set; } = new List<Assembly>();
+    public IEnumerable<Assembly> CodeBasedMigrationsAssemblies { get; set; } = new List<Assembly>();
     
     public string Table { get; set; } = "Prime.Migrations";
     public string Schema { get; set; } = "system";

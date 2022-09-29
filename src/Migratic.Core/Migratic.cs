@@ -81,7 +81,7 @@ public sealed class Migratic
         var providedMigrations = new List<Migration>();
         foreach (var provider in _config.MigrationScriptProviders)
         {
-            var providerMigration = await provider.GetMigrations();
+            var providerMigration = provider.GetMigrations();
             if (providerMigration.IsFailure)
             {
                 _logger.LogError("Failed to get migrations from provider");
