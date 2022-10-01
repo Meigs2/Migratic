@@ -81,17 +81,17 @@ public class PostgresDatabaseProvider : IMigraticDatabaseProvider
         throw new NotImplementedException();
     }
 
-    public bool HistoryTableExists()
+    public bool MigraticTableExists()
     {
         throw new NotImplementedException();
     }
 
-    public bool HistoryTableSchemaExists()
+    public bool MigraticSchemaExists()
     {
         throw new NotImplementedException();
     }
 
-    public Task<Result> CreateHistoryTableSchema()
+    public Task<Result> CreateMigraticSchema()
     {
         throw new NotImplementedException();
     }

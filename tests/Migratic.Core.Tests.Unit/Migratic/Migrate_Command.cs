@@ -19,8 +19,8 @@ public class With_Empty_Database
     [Test] public void Fails_When_Schema_Creation_Fails()
     {
         var mockDatabaseProvider = new Mock<MockProvider>();
-        mockDatabaseProvider.Setup(x => x.CreateHistoryTableSchema()).Returns(Failure.ToTask);
-        mockDatabaseProvider.Setup(x => x.HistoryTableSchemaExists()).Returns(false);
+        mockDatabaseProvider.Setup(x => x.CreateMigraticSchema()).Returns(Failure.ToTask);
+        mockDatabaseProvider.Setup(x => x.MigraticSchemaExists()).Returns(false);
         mockDatabaseProvider.CallBase = true;
         var config = new MigraticConfiguration();
         var migratic = new Core.Migratic(config, _logger, _mediator.Object, mockDatabaseProvider.Object);
@@ -30,7 +30,7 @@ public class With_Empty_Database
     [Test] public void Fails_When_Schema_Table_Creation_Fails()
     {
         var mockDatabaseProvider = new Mock<MockProvider>();
-        mockDatabaseProvider.Setup(x => x.HistoryTableExists()).Returns(false);
+        mockDatabaseProvider.Setup(x => x.MigraticTableExists()).Returns(false);
         mockDatabaseProvider.Setup(x => x.CreateHistoryTable()).Returns(Failure.ToTask);
         mockDatabaseProvider.CallBase = true;
         var config = new MigraticConfiguration();
@@ -53,9 +53,9 @@ public class MockProvider : IMigraticDatabaseProvider
 {
     public virtual Task<Result> CreateHistoryTable() => Result.Success.ToTask();
     public virtual IEnumerable<MigraticHistory> GetHistory() => new List<MigraticHistory>();
-    public virtual bool HistoryTableExists() => true;
-    public virtual bool HistoryTableSchemaExists() => true;
-    public virtual Task<Result> CreateHistoryTableSchema() => Result.Success.ToTask();
+    public virtual bool MigraticTableExists() => true;
+    public virtual bool MigraticSchemaExists() => true;
+    public virtual Task<Result> CreateMigraticSchema() => Result.Success.ToTask();
     public virtual Task<Result> InsertHistoryEntry(Migration migration) => Result.Success.ToTask();
     public virtual Task<Result> InsertHistoryEntries(IEnumerable<Migration> migrations) => Result.Success.ToTask();
 }

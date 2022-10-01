@@ -9,9 +9,9 @@ public interface IMigraticDatabaseProvider
 {
     IEnumerable<MigraticHistory> GetHistory();
     
-    public bool HistoryTableExists();
-    public bool HistoryTableSchemaExists();
-    Task<Result> CreateHistoryTableSchema();
+    public bool MigraticTableExists();
+    public bool MigraticSchemaExists();
+    Task<Result> CreateMigraticSchema();
     Task<Result> CreateHistoryTable();
     Task<Result> InsertHistoryEntry(Migration migration);
     Task<Result> InsertHistoryEntries(IEnumerable<Migration> migrations);
