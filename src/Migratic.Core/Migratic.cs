@@ -13,81 +13,29 @@ using Migratic.Core.Models;
 
 namespace Migratic.Core;
 
-public sealed class Migratic
+public interface IMigraticRunner
 {
-    private readonly MigraticConfiguration _config;
+    Task<Result<List<Migration>>> GetMigrationsFromProviders(IEnumerable<IMigrationProvider> migrationScriptProviders);
+    Task<Result> ExecuteAllOrNothingMigration(List<Migration> migrations);
+    Task<Result> ExecuteTransactionPerMigration(List<Migration> migrations);
+    Task<Result> InitializeMigratic();
+    Task<Result<IEnumerable<MigraticHistory>>> GetMigraticHistory();
+}
+
+internal sealed class MigraticRunner : IMigraticRunner
+{
     private readonly ILogger _logger;
     private readonly IMediator _mediator;
     private readonly IMigraticDatabaseProvider _databaseProvider;
-    public static MigraticBuilder CreateBuilder() => new(new ServiceCollection());
 
-    public Migratic(MigraticConfiguration config,
-        ILogger logger,
-        IMediator mediator,
-        IMigraticDatabaseProvider databaseProvider)
+    public MigraticRunner(ILogger logger, IMediator mediator, IMigraticDatabaseProvider databaseProvider)
     {
-        _logger = logger;
+        this._logger = logger;
         _mediator = mediator;
-        _databaseProvider = databaseProvider;
-        _config = config;
+        this._databaseProvider = databaseProvider;
     }
 
-    public async Task<Result> Migrate()
-    {
-        var result = InitializeMigraticHistoryTableIfNotExisits(_databaseProvider, _logger)
-                    .FromTask()
-                    .Map(async x => await GetMigrationsFromProviders(_config.MigrationScriptProviders))
-                    .Unwrap()
-                    .Match(
-                         predicate: x => x.IsSuccess,
-                         success: x => x.Value,
-                         failure: x => x.WithError("Failed to get migrations from providers"))
-                    .Map(async x => await GetMigrationsFromDatabase(_databaseProvider, _logger))
-
-
-        var initializationResult = await InitializeMigraticHistoryTableIfNotExisits(_databaseProvider, _logger);
-        if (initializationResult.IsFailure)
-        {
-            return initializationResult.WithError("Unable to initialize migratic history table and/or schemas.");
-        }
-
-        var providedMigrations = await GetMigrationsFromProviders(_config.MigrationScriptProviders);
-        if (providedMigrations.IsFailure)
-        {
-            return providedMigrations.WithError("Unable to get migrations from providers.");
-        }
-
-        var orderedProvidedMigrations = providedMigrations.Value.OrderBy(m => m.Version).ToList();
-        if (orderedProvidedMigrations.Count == 0)
-        {
-            _logger.LogInformation("No migrations found");
-            return Result.Success;
-        }
-
-        var history = _databaseProvider.GetHistory();
-        var orderedMigrationsToApply = GetMigrationsToApply(orderedProvidedMigrations, history).ToList();
-        if (!orderedMigrationsToApply.Any())
-        {
-            _logger.LogInformation("No migrations to apply");
-            return Result.Success;
-        }
-
-        _logger.LogInformation("Applying {Count} migrations", orderedMigrationsToApply.Count());
-        _logger.LogInformation("Using transaction strategy: {ConfigTransactionStrategy}", _config.TransactionStrategy);
-        if (_config.TransactionStrategy == TransactionStrategy.AllOrNothing)
-        {
-            return await ExecuteAllOrNothingMigration(orderedMigrationsToApply, _databaseProvider);
-        }
-
-        if (_config.TransactionStrategy == TransactionStrategy.PerMigration)
-        {
-            return await ExecutePerMigrationStrategy(orderedMigrationsToApply, _databaseProvider);
-        }
-
-        return new InvalidOperationException("Invalid transaction strategy");
-    }
-
-    private async Task<Result<List<Migration>>> GetMigrationsFromProviders(
+    public async Task<Result<List<Migration>>> GetMigrationsFromProviders(
         IEnumerable<IMigrationProvider> migrationScriptProviders)
     {
         var providedMigrations = new List<Migration>();
@@ -107,33 +55,31 @@ public sealed class Migratic
         return await Result<List<Migration>>.Success(providedMigrations).ToTask();
     }
 
-    private async Task<Result> ExecuteAllOrNothingMigration(List<Migration> migrationsToApply,
-        IMigraticDatabaseProvider databaseProvider)
+    public async Task<Result> ExecuteAllOrNothingMigration(List<Migration> migrations)
     {
         // Use one transaction for all migrations. If one fails, rollback all.
         using var scope = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled);
-        foreach (var migration in migrationsToApply)
+        foreach (var migration in migrations)
         {
-            var result = await MigrateInternal(migration);
+            var result = await ExecuteMigration(migration);
             if (result.IsFailure)
                 return result.WithError($"{migration.Description} failed, rolling back all migrations.");
         }
 
-        var insertionResult = await databaseProvider.InsertHistoryEntries(migrationsToApply);
+        var insertionResult = await _databaseProvider.InsertHistoryEntries(migrations);
         if (insertionResult.IsFailure) return insertionResult.WithError("Failed to insert history entries");
         scope.Complete();
         return Result.Success;
     }
 
-    private async Task<Result> ExecutePerMigrationStrategy(List<Migration> providedMigrations,
-        IMigraticDatabaseProvider databaseProvider)
+    public async Task<Result> ExecuteTransactionPerMigration(List<Migration> migrations)
     {
         var i = 0;
-        foreach (var migration in providedMigrations)
+        foreach (var migration in migrations)
         {
             // Use one transaction per migration. If one fails, rollback that migration.
             using var scope = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled);
-            var result = await MigrateInternal(migration);
+            var result = await ExecuteMigration(migration);
             if (result.IsFailure)
             {
                 _logger.LogError("Failed to apply migration {MigrationVersion}", migration.Version);
@@ -141,7 +87,7 @@ public sealed class Migratic
                     $"Migration {migration.Description} failed, rolling back. {i} migration(s) executed successfully.");
             }
 
-            var insertionResult = await databaseProvider.InsertHistoryEntry(migration);
+            var insertionResult = await _databaseProvider.InsertHistoryEntry(migration);
             if (insertionResult.IsFailure) return insertionResult.WithError("Failed to insert history entries");
             scope.Complete();
             i++;
@@ -150,53 +96,42 @@ public sealed class Migratic
         return Result.Success;
     }
 
-    private async Task<Result> InitializeMigraticHistoryTableIfNotExisits(
-        IMigraticDatabaseProvider migraticDatabaseProvider,
-        ILogger logger)
+    public async Task<Result> InitializeMigratic()
     {
-        return await InitializeMigraticSchema(migraticDatabaseProvider, logger) +
-               await InitializeMigraticTable(migraticDatabaseProvider, logger);
+        return await InitializeMigraticSchema() + await InitializeMigraticTable();
     }
 
-    private record MigraticSchemaNotInitializedError() : UnexpectedError("Migratic schema not initialized")
+    private async Task<Result> InitializeMigraticTable()
     {
+        if (!_databaseProvider.MigraticSchemaExists())
+            return Result.Failure(new Migratic.MigraticSchemaNotInitializedError());
+        if (_databaseProvider.MigraticTableExists()) return Result.Success;
+        _logger.LogInformation("Migratic history table does not exist, creating it");
+        return (await _databaseProvider.CreateHistoryTable()).Map(onSuccess: () => Result.Success,
+                                                                  onFailure: error =>
+                                                                      Result.Failure(
+                                                                          new Migratic.
+                                                                              MigraticTableNotInitializedError()));
     }
 
-    private record MigraticTableNotInitializedError() : UnexpectedError("Migratic table not initialized")
+    public async Task<Result> InitializeMigraticSchema()
     {
+        if (_databaseProvider.MigraticSchemaExists()) return Result.Success;
+        _logger.LogInformation("Migratic history schema does not exist, creating it");
+        return (await _databaseProvider.CreateMigraticSchema()).Map(onSuccess: () => Result.Success,
+                                                                    onFailure: error =>
+                                                                        Result.Failure(error)
+                                                                              .WithError(
+                                                                                   new Migratic.
+                                                                                       MigraticSchemaNotInitializedError()));
     }
 
-    private static async Task<Result> InitializeMigraticTable(IMigraticDatabaseProvider migraticDatabaseProvider,
-        ILogger logger)
+    public async Task<Result<IEnumerable<MigraticHistory>>> GetMigraticHistory()
     {
-        if (!migraticDatabaseProvider.MigraticSchemaExists())
-            return Result.Failure(new MigraticSchemaNotInitializedError());
-        if (migraticDatabaseProvider.MigraticTableExists()) return Result.Success;
-        logger.LogInformation("Migratic history table does not exist, creating it");
-        return (await migraticDatabaseProvider.CreateHistoryTable()).Map(
-            onSuccess: () => Result.Success,
-            onFailure: error => Result.Failure(new MigraticTableNotInitializedError()));
+        return await _databaseProvider.GetHistory();
     }
 
-    private static async Task<Result> InitializeMigraticSchema(IMigraticDatabaseProvider migraticDatabaseProvider,
-        ILogger logger)
-    {
-        if (migraticDatabaseProvider.MigraticSchemaExists()) return Result.Success;
-        logger.LogInformation("Migratic history schema does not exist, creating it");
-        return (await migraticDatabaseProvider.CreateMigraticSchema()).Map(
-            onSuccess: () => Result.Success,
-            onFailure: error => Result.Failure(error).WithError(new MigraticSchemaNotInitializedError()));
-    }
-
-    private IEnumerable<Migration> GetMigrationsToApply(IEnumerable<Migration> providedMigrations,
-        IEnumerable<MigraticHistory> history)
-    {
-        var appliedMigrations = history.Select(h => h.Version);
-        var maxVersion = appliedMigrations.Where(x => x.IsSome).Max(x => x.Value).ToOption();
-        return maxVersion.IsNone ? providedMigrations : providedMigrations.Where(m => m.Version > maxVersion.Value);
-    }
-
-    private async Task<Result<Migration>> MigrateInternal(Migration migration)
+    public async Task<Result<Migration>> ExecuteMigration(Migration migration)
     {
         var result = await _mediator.Send(new ExecuteMigrationCommand(migration));
         if (result.IsFailure)
@@ -206,6 +141,82 @@ public sealed class Migratic
         }
 
         return result;
+    }
+}
+
+public sealed class Migratic
+{
+    private readonly MigraticConfiguration _config;
+    private readonly ILogger _logger;
+    private readonly IMigraticRunner _migraticRunner;
+    public static MigraticBuilder CreateBuilder() => new(new ServiceCollection());
+
+    public Migratic(MigraticConfiguration config, IMigraticRunner migraticRunner)
+    {
+        _config = config;
+        _migraticRunner = migraticRunner;
+    }
+
+    public async Task<Result> Migrate()
+    {
+        var initializationResult = await _migraticRunner.InitializeMigratic();
+        if (initializationResult.IsFailure)
+        {
+            return initializationResult.WithError("Unable to initialize migratic history table and/or schemas.");
+        }
+
+        var providedMigrations = await _migraticRunner.GetMigrationsFromProviders(_config.MigrationScriptProviders);
+        if (providedMigrations.IsFailure)
+        {
+            return providedMigrations.WithError("Unable to get migrations from providers.");
+        }
+
+        var history = await _migraticRunner.GetMigraticHistory();
+        if (history.IsFailure) { return history.WithError("Unable to get migratic history."); }
+
+        var orderedProvidedMigrations = providedMigrations.Value.OrderBy(m => m.Version).ToList();
+        if (orderedProvidedMigrations.Count == 0)
+        {
+            _logger.LogInformation("No migrations found");
+            return Result.Success;
+        }
+
+        var orderedMigrationsToApply = GetMigrationsToApply(orderedProvidedMigrations, history.Value).ToList();
+        if (!orderedMigrationsToApply.Any())
+        {
+            _logger.LogInformation("No migrations to apply");
+            return Result.Success;
+        }
+
+        _logger.LogInformation("Applying {Count} new migrations", orderedMigrationsToApply.Count());
+        _logger.LogInformation("Using transaction strategy: {ConfigTransactionStrategy}", _config.TransactionStrategy);
+        if (_config.TransactionStrategy == TransactionStrategy.AllOrNothing)
+        {
+            return await _migraticRunner.ExecuteAllOrNothingMigration(orderedMigrationsToApply);
+        }
+
+        if (_config.TransactionStrategy == TransactionStrategy.PerMigration)
+        {
+            return await _migraticRunner.ExecuteTransactionPerMigration(orderedMigrationsToApply);
+        }
+
+        return new InvalidOperationException("Invalid transaction strategy");
+    }
+
+    public IEnumerable<Migration> GetMigrationsToApply(IEnumerable<Migration> providedMigrations,
+        IEnumerable<MigraticHistory> executedHistory)
+    {
+        var appliedMigrations = executedHistory.Select(h => h.Version);
+        var maxVersion = appliedMigrations.Where(x => x.IsSome).Max(x => x.Value).ToOption();
+        return maxVersion.IsNone ? providedMigrations : providedMigrations.Where(m => m.Version > maxVersion.Value);
+    }
+
+    public record MigraticSchemaNotInitializedError() : UnexpectedError("Migratic schema not initialized")
+    {
+    }
+
+    public record MigraticTableNotInitializedError() : UnexpectedError("Migratic table not initialized")
+    {
     }
 
     public Result Baseline() { return Result.Success; }

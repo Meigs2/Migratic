@@ -76,7 +76,7 @@ public class PostgresDatabaseProvider : IMigraticDatabaseProvider
     {
     }
 
-    public IEnumerable<MigraticHistory> GetHistory()
+    public Task<Result<IEnumerable<MigraticHistory>>> GetHistory()
     {
         throw new NotImplementedException();
     }

@@ -7,7 +7,7 @@ namespace Migratic.Core.Abstractions;
 
 public interface IMigraticDatabaseProvider
 {
-    IEnumerable<MigraticHistory> GetHistory();
+    Task<Result<IEnumerable<MigraticHistory>>> GetHistory();
     
     public bool MigraticTableExists();
     public bool MigraticSchemaExists();
