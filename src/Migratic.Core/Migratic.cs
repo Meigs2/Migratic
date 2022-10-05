@@ -142,56 +142,15 @@ public sealed class Migratic
     private readonly IMigraticRunner _migraticRunner;
     public static MigraticBuilder CreateBuilder() => new(new ServiceCollection());
 
-    public Migratic(MigraticConfiguration config, IMigraticRunner migraticRunner)
+    public Migratic(MigraticConfiguration config, IMigraticRunner migraticRunner, ILogger logger)
     {
         _config = config;
         _migraticRunner = migraticRunner;
+        _logger = logger;
     }
 
     public async Task<Result> Migrate()
     {
-        var initializationResult = await _migraticRunner.InitializeMigratic();
-        if (initializationResult.IsFailure)
-        {
-            return initializationResult.WithError("Unable to initialize migratic history table and/or schemas.");
-        }
-
-        var providedMigrations = await _migraticRunner.GetMigrationsFromProviders(_config.MigrationScriptProviders);
-        if (providedMigrations.IsFailure)
-        {
-            return providedMigrations.WithError("Unable to get migrations from providers.");
-        }
-
-        var history = await _migraticRunner.GetMigraticHistory();
-        if (history.IsFailure) { return history.WithError("Unable to get migratic history."); }
-
-        var orderedProvidedMigrations = providedMigrations.Value.OrderBy(m => m.Version).ToList();
-        if (orderedProvidedMigrations.Count == 0)
-        {
-            _logger.LogInformation("No migrations found");
-            return Result.Success;
-        }
-
-        var orderedMigrationsToApply = GetMigrationsToApply(orderedProvidedMigrations, history.Value).ToList();
-        if (!orderedMigrationsToApply.Any())
-        {
-            _logger.LogInformation("No migrations to apply");
-            return Result.Success;
-        }
-
-        _logger.LogInformation("Applying {Count} new migrations", orderedMigrationsToApply.Count());
-        _logger.LogInformation("Using transaction strategy: {ConfigTransactionStrategy}", _config.TransactionStrategy);
-        if (_config.TransactionStrategy == TransactionStrategy.AllOrNothing)
-        {
-            return await _migraticRunner.ExecuteAllOrNothingMigration(orderedMigrationsToApply);
-        }
-
-        if (_config.TransactionStrategy == TransactionStrategy.PerMigration)
-        {
-            return await _migraticRunner.ExecuteTransactionPerMigration(orderedMigrationsToApply);
-        }
-
-        return new InvalidOperationException("Invalid transaction strategy");
     }
 
     public IEnumerable<Migration> GetMigrationsToApply(IEnumerable<Migration> providedMigrations,
@@ -210,12 +169,39 @@ public sealed class Migratic
     {
     }
 
+    /// <summary>
+    /// Performs a baseline migration. Will execute the baseline migration script and bring the database to the version
+    /// specified in the baseline migration script. Will not execute any other migrations.
+    /// </summary>
+    /// <returns></returns>
     public Result Baseline() { return Result.Success; }
+    
+    /// <summary>
+    /// Performs a repair operation on the migratic history table.
+    /// Will remove any failed migrations from the history table, re-align the checksums and versions of the remaining
+    /// migrations and mark any missing migrations as deleted.
+    /// </summary>
+    /// <returns></returns>
     public Result Repair() { return Result.Success; }
+    
+    /// <summary>
+    /// Fully reverts the database to the initial state.
+    /// Removes all tables, schemas and data from the database. Intended to be used in testing environments.
+    /// </summary>
+    /// <returns></returns>
     public Result Clean() { return Result.Success; }
-    public IEnumerable<MigraticHistory> Status() { return Enumerable.Empty<MigraticHistory>(); }
-    public void Version() { }
-    public void Info() { }
+
+    /// <summary>
+    /// Performs a dry run of the migration process. Returns information about the current state of the database, the
+    /// migrations that are to be applied and other information.
+    /// </summary>
+    /// <returns></returns>
+    public MigraticStatus Status() { throw new NotImplementedException();}
+    
+    /// <summary>
+    /// Gets the current version of the database. Returns None if the database is not initialized.
+    /// </summary>
+    public Option<MigrationVersion> Version() { return Option.None; }
 }
 
 public interface IMigraticBuilder
@@ -277,4 +263,34 @@ public static class MigraticExtensions
         services.AddSingleton<ILogger, ConsoleLogger>();
         return services;
     }
+}
+
+// IMigraticRunner is the orchestrator of the migration process, it interacts with the DatabaseProvider and Migratic
+// to execute the migrations, return information about the current state of the database, etc.
+
+public interface IMigraticRunner
+{
+    // Create the definitions for methods which will by used and chained together to perform the various
+    // functions of the Migratic class.
+    // The methods in IMigraticRunner will be used in the Migratic class to perform the various functions.
+    // The process for Migrating the database will be as follows:
+    // 1. Check that the Migratic schema and table exist
+    //   - If they do not exist, create them
+    // 2. Get the current state of the database
+    // 3. Get the migrations to apply from the database providers
+    // 4. Get the migrations that have been applied from the Migratic table
+    // 5. Get the migrations that need to be applied
+    // 6. Execute the migrations
+    // 7. Update the Migratic table
+    // 8. Return the result of the migration process
+    
+    // The individual steps can be used to perform other functions, such as getting the status of the database for the Status command,
+    // or performing a dry run of the migration process.
+    
+    // Implement the methods to be used in the process outlined above. Tasks should be used to allow for asynchronous execution.
+    
+    Task<Result> 
+
+
+    // Look at the public facing members of the Migratic class and add definitions for the shared processes here.
 }
