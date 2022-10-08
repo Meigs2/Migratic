@@ -146,8 +146,9 @@ public sealed class Migratic
         _logger = logger;
     }
 
-    public async Task<Result> Migrate()
+    public Task<Result> Migrate()
     {
+        throw new NotImplementedException();
     }
 
     public IEnumerable<Migration> GetMigrationsToApply(IEnumerable<Migration> providedMigrations,
