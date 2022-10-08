@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Data;
 using System.Data.Common;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,13 +15,19 @@ public record ExecuteMigrationCommand(Migration Migration) : IRequest<Result<Mig
 
 internal class ExecuteMigrationCommandHandler : IRequestHandler<ExecuteMigrationCommand, Result<Migration>>
 {
-    private DbCommand _command;
-    public ExecuteMigrationCommandHandler(DbCommand command) { _command = command; }
+    private IMigraticDatabaseProvider _databaseProvider;
 
-    public async Task<Result<Migration>> Handle(ExecuteMigrationCommand request,
-        CancellationToken cancellationToken)
+    public ExecuteMigrationCommandHandler(IMigraticDatabaseProvider databaseProvider)
     {
-        try { return await request.Migration.Execute(_command); }
+        _databaseProvider = databaseProvider;
+    }
+
+    public async Task<Result<Migration>> Handle(ExecuteMigrationCommand request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _databaseProvider.Execute(request.Migration);
+        }
         catch (Exception e)
         {
             Console.WriteLine(e);
@@ -32,8 +39,8 @@ internal class ExecuteMigrationCommandHandler : IRequestHandler<ExecuteMigration
 public abstract class MigrationExecutionBehaviour : IPipelineBehavior<ExecuteMigrationCommand, Result<Migration>>
 {
     public async Task<Result<Migration>> Handle(ExecuteMigrationCommand request,
-        CancellationToken cancellationToken,
-        RequestHandlerDelegate<Result<Migration>> next)
+                                                CancellationToken cancellationToken,
+                                                RequestHandlerDelegate<Result<Migration>> next)
     {
         request.Migration = await BeforeMigrationExecution(request.Migration);
         var result = await next();
@@ -47,7 +54,10 @@ public abstract class MigrationExecutionBehaviour : IPipelineBehavior<ExecuteMig
 
 public abstract class BeforeMigrationExecutionBehaviour : MigrationExecutionBehaviour
 {
-    public sealed override Task AfterMigrationExecution(Result<Migration> migration) { return Task.CompletedTask; }
+    public sealed override Task AfterMigrationExecution(Result<Migration> migration)
+    {
+        return Task.CompletedTask;
+    }
 }
 
 public abstract class AfterMigrationExecutionBehaviour : MigrationExecutionBehaviour

@@ -1,9 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Data.Common;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
+using Dapper;
 using Functional.Core;
 using Unit = System.ValueTuple;
 
@@ -14,15 +16,15 @@ namespace Migratic.Core
         private string? _checksum;
 
         public Migration(MigrationType Type, MigrationVersion Version, string Description, string Sql) : this(
-            Type,
-            Version,
-            Description,
-            Sql,
-            Encoding.UTF8)
+            Type, Version, Description, Sql, Encoding.UTF8)
         {
         }
 
-        public Migration(MigrationType Type, MigrationVersion Version, string Description, string Sql, Encoding encoding)
+        public Migration(MigrationType Type,
+                         MigrationVersion Version,
+                         string Description,
+                         string Sql,
+                         Encoding encoding)
         {
             this.Type = Type;
             this.Version = Version;
@@ -37,6 +39,9 @@ namespace Migratic.Core
         public string Sql { get; init; }
         public string Checksum => _checksum ??= GetHash(Sql);
         private Encoding Encoding { get; init; }
+        public DateTime AppliedAt { get; init; }
+        public string AppliedBy { get; init; }
+        public bool Success { get; init; }
 
         private static string GetHash(string sql)
         {
@@ -45,33 +50,19 @@ namespace Migratic.Core
             var inputBytes = Encoding.UTF8.GetBytes(sql);
             var hashBytes = md5.ComputeHash(inputBytes);
             var sb = new StringBuilder();
-            foreach (var t in hashBytes) { sb.Append(t.ToString("X2")); }
+            foreach (var t in hashBytes)
+            {
+                sb.Append(t.ToString("X2"));
+            }
 
             return sb.ToString();
         }
 
-        public async Task<Result<Migration>> Execute(DbCommand command)
+        public Migration SetSuccess()
         {
-            try
-            {
-                command.CommandText = Sql;
-                await command.ExecuteNonQueryAsync();
-                return this;
-            }
-            catch (Exception e) { return e; }
+            return this with { Success = true, AppliedAt = DateTime.Now };
         }
 
-        public void Deconstruct(out MigrationType Type,
-            out Option<MigrationVersion> Version,
-            out string Description,
-            out string Sql,
-            out Encoding encoding)
-        {
-            Type = this.Type;
-            Version = this.Version;
-            Description = this.Description;
-            Sql = this.Sql;
-            encoding = this.Encoding;
-        }
+        public Migration WithAppliedBy(string appliedBy) => this with { AppliedBy = appliedBy };
     }
 }

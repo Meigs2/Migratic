@@ -7,9 +7,7 @@ using Functional.Core;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Migratic.Core.Abstractions;
 using Migratic.Core.Commands;
-using Migratic.Core.Models;
 
 namespace Migratic.Core;
 
@@ -68,7 +66,6 @@ internal sealed class MigraticRunner : IMigraticRunner
         var i = 0;
         foreach (var migration in migrations)
         {
-            // Use one transaction per migration. If one fails, rollback that migration.
             using var scope = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled);
             var result = await ExecuteMigration(migration);
             if (result.IsFailure)
@@ -94,9 +91,9 @@ internal sealed class MigraticRunner : IMigraticRunner
 
     private async Task<Result> InitializeMigraticTable()
     {
-        if (!_databaseProvider.MigraticSchemaExists())
+        if (!await _databaseProvider.MigraticSchemaExists())
             return Result.Failure(new Migratic.MigraticSchemaNotInitializedError());
-        if (_databaseProvider.MigraticTableExists()) return Result.Success;
+        if (await _databaseProvider.MigraticTableExists()) return Result.Success;
         _logger.LogInformation("Migratic history table does not exist, creating it");
         return (await _databaseProvider.CreateHistoryTable()).Map(onSuccess: () => Result.Success,
                                                                   onFailure: error =>
@@ -107,7 +104,7 @@ internal sealed class MigraticRunner : IMigraticRunner
 
     public async Task<Result> InitializeMigraticSchema()
     {
-        if (_databaseProvider.MigraticSchemaExists()) return Result.Success;
+        if (await _databaseProvider.MigraticSchemaExists()) return Result.Success;
         _logger.LogInformation("Migratic history schema does not exist, creating it");
         return (await _databaseProvider.CreateMigraticSchema()).Map(onSuccess: () => Result.Success,
                                                                     onFailure: error =>
@@ -265,32 +262,6 @@ public static class MigraticExtensions
     }
 }
 
-// IMigraticRunner is the orchestrator of the migration process, it interacts with the DatabaseProvider and Migratic
-// to execute the migrations, return information about the current state of the database, etc.
-
 public interface IMigraticRunner
 {
-    // Create the definitions for methods which will by used and chained together to perform the various
-    // functions of the Migratic class.
-    // The methods in IMigraticRunner will be used in the Migratic class to perform the various functions.
-    // The process for Migrating the database will be as follows:
-    // 1. Check that the Migratic schema and table exist
-    //   - If they do not exist, create them
-    // 2. Get the current state of the database
-    // 3. Get the migrations to apply from the database providers
-    // 4. Get the migrations that have been applied from the Migratic table
-    // 5. Get the migrations that need to be applied
-    // 6. Execute the migrations
-    // 7. Update the Migratic table
-    // 8. Return the result of the migration process
-    
-    // The individual steps can be used to perform other functions, such as getting the status of the database for the Status command,
-    // or performing a dry run of the migration process.
-    
-    // Implement the methods to be used in the process outlined above. Tasks should be used to allow for asynchronous execution.
-    
-    Task<Result> 
-
-
-    // Look at the public facing members of the Migratic class and add definitions for the shared processes here.
 }
