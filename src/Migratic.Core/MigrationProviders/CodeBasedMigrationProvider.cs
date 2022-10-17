@@ -24,7 +24,7 @@ public class CodeBasedMigrationProvider : MigrationProvider
 
     public override string ProviderName => "Code Based";
 
-    public override Task<Result<IEnumerable<Migration>>> GetMigrations()
+    public override async Task<Result<IEnumerable<Migration>>> GetMigrations()
     {
         // get all migrations from the service provider that implement ICodeBasedMigration
         var migrations = _serviceProvider.GetServices<ICodeBasedMigration>();
@@ -50,6 +50,6 @@ public class CodeBasedMigrationProvider : MigrationProvider
                           })
                          .Map(x => x).ToList();
 
-        return Result<IEnumerable<Migration>>.Success(a).ToTask();
+        return a;
     }
 }

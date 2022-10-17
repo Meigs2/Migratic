@@ -57,7 +57,7 @@ public class PostgresqlDatabaseProvider : IMigraticDatabaseProvider
         var history = await GetHistory();
         if (history.IsFailure)
         {
-            return Result<MigraticStatus>.Failure(history.Errors);
+            return Result.Failure(history.Errors);
         }
 
         return CreateStatus(history.Value);

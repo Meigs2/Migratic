@@ -13,9 +13,10 @@ public class AssemblyEmbeddedMigrationProvider : MigrationProvider
     public AssemblyEmbeddedMigrationProvider(MigraticConfiguration configuration) : base(configuration) { }
     public override string ProviderName => "Assembly Embedded";
 
-    public override Task<Result<IEnumerable<Migration>>> GetMigrations()
+    public override async Task<Result<IEnumerable<Migration>>> GetMigrations()
     {
         var result = new List<Migration>();
+        await Task.CompletedTask;
         // the configuration can specify multiple assemblies to search for migrations
         try
         {
@@ -44,10 +45,10 @@ public class AssemblyEmbeddedMigrationProvider : MigrationProvider
         }
         catch (Exception e)
         {
-            return Result<IEnumerable<Migration>>.Failure(e).ToTask();
+            return e;
         }
 
-        return Result<IEnumerable<Migration>>.Success(result).ToTask();
+        return result;
     }
 
     internal static string GetResourceString(Assembly assembly, string resourceName)

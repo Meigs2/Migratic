@@ -38,16 +38,15 @@ internal class ExecuteMigrationCommandHandler : IRequestHandler<ExecuteMigration
 
 public abstract class MigrationExecutionBehaviour : IPipelineBehavior<ExecuteMigrationCommand, Result<Migration>>
 {
-    public async Task<Result<Migration>> Handle(ExecuteMigrationCommand request,
-                                                CancellationToken cancellationToken,
-                                                RequestHandlerDelegate<Result<Migration>> next)
+    /// <inheritdoc />
+    public async Task<Result<Migration>> Handle(ExecuteMigrationCommand request, RequestHandlerDelegate<Result<Migration>> next, CancellationToken cancellationToken)
     {
         request.Migration = await BeforeMigrationExecution(request.Migration);
         var result = await next();
         await AfterMigrationExecution(result);
         return result;
     }
-
+    
     public abstract Task<Migration> BeforeMigrationExecution(Migration migration);
     public abstract Task AfterMigrationExecution(Result<Migration> migration);
 }

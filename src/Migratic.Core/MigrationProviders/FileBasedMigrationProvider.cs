@@ -11,7 +11,7 @@ public class FileBasedMigrationProvider : MigrationProvider
     public FileBasedMigrationProvider(MigraticConfiguration configuration) : base(configuration) { }
     public override string ProviderName => "File Based";
 
-    public override Task<Result<IEnumerable<Migration>>> GetMigrations()
+    public override async Task<Result<IEnumerable<Migration>>> GetMigrations()
     {
         var result = new List<Migration>();
         
@@ -50,6 +50,6 @@ public class FileBasedMigrationProvider : MigrationProvider
             }
         }
 
-        return Result<IEnumerable<Migration>>.Success(result).ToTask();
+        return result;
     }
 }

@@ -41,7 +41,7 @@ internal sealed class MigraticRunner : IMigraticRunner
             providedMigrations.AddRange(providerMigration.Value);
         }
 
-        return await Result<List<Migration>>.Success(providedMigrations).ToTask();
+        return await providedMigrations.ToResult().ToTask();
     }
 
     public async Task<Result> ExecuteAllOrNothingMigration(List<Migration> migrations)
@@ -243,8 +243,8 @@ public class MigraticBuilder : IMigraticBuilder
         _logger ??= new ConsoleLogger();
         _services.AddSingleton(_configuration);
         _services.AddSingleton(_logger);
-        _services.AddSingleton<Migratic>();
-        return _services?.BuildServiceProvider()?.GetService<Migratic>() ?? Option<Migratic>.None;
+        _services.AddMediatR(typeof(Migratic).Assembly);
+        return _services.BuildServiceProvider().GetService<Migratic>() ?? Option<Migratic>.None;
     }
 }
 
