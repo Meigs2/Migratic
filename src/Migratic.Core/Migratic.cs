@@ -35,13 +35,13 @@ internal sealed class MigraticRunner : IMigraticRunner
             {
                 _logger.LogError("Failed to get migrations from provider");
                 _logger.LogError(providerMigration.ToString());
-                return await Result<List<Migration>>.Failure("Failed to get migrations from provider").ToTask();
+                return Result.Failure("Failed to get migrations from provider");
             }
 
             providedMigrations.AddRange(providerMigration.Value);
         }
 
-        return await providedMigrations.ToResult().ToTask();
+        return providedMigrations;
     }
 
     public async Task<Result> ExecuteAllOrNothingMigration(List<Migration> migrations)
@@ -52,11 +52,11 @@ internal sealed class MigraticRunner : IMigraticRunner
         {
             var result = await ExecuteMigration(migration);
             if (result.IsFailure)
-                return result.WithError($"{migration.Description} failed, rolling back all migrations.");
+                return result.WithErrors($"{migration.Description} failed, rolling back all migrations.");
         }
 
         var insertionResult = await _databaseProvider.InsertHistoryEntries(migrations);
-        if (insertionResult.IsFailure) return insertionResult.WithError("Failed to insert history entries");
+        if (insertionResult.IsFailure) return insertionResult.WithErrors("Failed to insert history entries");
         scope.Complete();
         return Result.Success;
     }
@@ -71,12 +71,12 @@ internal sealed class MigraticRunner : IMigraticRunner
             if (result.IsFailure)
             {
                 _logger.LogError("Failed to apply migration {MigrationVersion}", migration.Version);
-                return result.WithError(
+                return result.WithErrors(
                     $"Migration {migration.Description} failed, rolling back. {i} migration(s) executed successfully.");
             }
 
             var insertionResult = await _databaseProvider.InsertHistoryEntry(migration);
-            if (insertionResult.IsFailure) return insertionResult.WithError("Failed to insert history entries");
+            if (insertionResult.IsFailure) return insertionResult.WithErrors("Failed to insert history entries");
             scope.Complete();
             i++;
         }
@@ -109,9 +109,9 @@ internal sealed class MigraticRunner : IMigraticRunner
         return (await _databaseProvider.CreateMigraticSchema()).Map(onSuccess: () => Result.Success,
                                                                     onFailure: error =>
                                                                         Result.Failure(error)
-                                                                              .WithError(
-                                                                                   new Migratic.
-                                                                                       MigraticSchemaNotInitializedError()));
+                                                                              .WithErrors(
+                                                                                  new Migratic.
+                                                                                      MigraticSchemaNotInitializedError()));
     }
 
     public async Task<Result<IEnumerable<MigraticHistory>>> GetMigraticHistory()
@@ -152,7 +152,7 @@ public sealed class Migratic
     }
 
     public IEnumerable<Migration> GetMigrationsToApply(IEnumerable<Migration> providedMigrations,
-        IEnumerable<MigraticHistory> executedHistory)
+                                                       IEnumerable<MigraticHistory> executedHistory)
     {
         var appliedMigrations = executedHistory.Select(h => h.Version);
         var maxVersion = appliedMigrations.Where(x => x.IsSome).Max(x => x.Value).ToOption();
@@ -172,34 +172,49 @@ public sealed class Migratic
     /// specified in the baseline migration script. Will not execute any other migrations.
     /// </summary>
     /// <returns></returns>
-    public Result Baseline() { return Result.Success; }
-    
+    public Result Baseline()
+    {
+        return Result.Success;
+    }
+
     /// <summary>
     /// Performs a repair operation on the migratic history table.
     /// Will remove any failed migrations from the history table, re-align the checksums and versions of the remaining
     /// migrations and mark any missing migrations as deleted.
     /// </summary>
     /// <returns></returns>
-    public Result Repair() { return Result.Success; }
-    
+    public Result Repair()
+    {
+        return Result.Success;
+    }
+
     /// <summary>
     /// Fully reverts the database to the initial state.
     /// Removes all tables, schemas and data from the database. Intended to be used in testing environments.
     /// </summary>
     /// <returns></returns>
-    public Result Clean() { return Result.Success; }
+    public Result Clean()
+    {
+        return Result.Success;
+    }
 
     /// <summary>
     /// Performs a dry run of the migration process. Returns information about the current state of the database, the
     /// migrations that are to be applied and other information.
     /// </summary>
     /// <returns></returns>
-    public MigraticStatus Status() { throw new NotImplementedException();}
-    
+    public MigraticStatus Status()
+    {
+        throw new NotImplementedException();
+    }
+
     /// <summary>
     /// Gets the current version of the database. Returns None if the database is not initialized.
     /// </summary>
-    public Option<MigrationVersion> Version() { return Option.None; }
+    public Option<MigrationVersion> Version()
+    {
+        return Option.None;
+    }
 }
 
 public interface IMigraticBuilder
@@ -215,7 +230,11 @@ public class MigraticBuilder : IMigraticBuilder
     private IMigraticDatabaseProvider _databaseProvider;
     private MigraticConfiguration? _configuration;
     private ILogger? _logger;
-    internal MigraticBuilder(IServiceCollection services) { _services = services; }
+
+    internal MigraticBuilder(IServiceCollection services)
+    {
+        _services = services;
+    }
 
     public MigraticBuilder WithLogger(ILogger logger)
     {
@@ -253,8 +272,14 @@ public static class MigraticExtensions
     public static IServiceCollection AddMigratic(this IServiceCollection services, Action<IMigraticBuilder>? configure)
     {
         var migraticBuilder = new MigraticBuilder(services);
-        if (configure != null) { configure(migraticBuilder); }
-        else { migraticBuilder.Build(); }
+        if (configure != null)
+        {
+            configure(migraticBuilder);
+        }
+        else
+        {
+            migraticBuilder.Build();
+        }
 
         configure?.Invoke(migraticBuilder);
         services.AddScoped(s => migraticBuilder.Build().ValueOrThrow());
