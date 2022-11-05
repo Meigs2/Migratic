@@ -2,7 +2,8 @@
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
-using Functional.Core;
+using Meigs2.Functional;
+using Meigs2.Functional.Results;
 
 namespace Migratic.Core;
 

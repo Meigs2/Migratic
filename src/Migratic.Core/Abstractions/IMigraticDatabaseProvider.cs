@@ -2,7 +2,8 @@
 using System.Collections.Generic;
 using System.Data;
 using System.Threading.Tasks;
-using Functional.Core;
+using Meigs2.Functional;
+using Meigs2.Functional.Results;
 using Migratic.Core.Models;
 
 namespace Migratic.Core;

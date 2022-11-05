@@ -9,6 +9,7 @@
 
     <ItemGroup>
       <PackageReference Include="CliFx" Version="2.3.0" />
+        <PackageReference Include="Meigs2.Functional" Version="0.1.1-alpha16" />
     </ItemGroup>
 
     <ItemGroup>

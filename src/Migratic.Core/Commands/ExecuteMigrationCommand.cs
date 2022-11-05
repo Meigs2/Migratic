@@ -3,8 +3,9 @@ using System.Data;
 using System.Data.Common;
 using System.Threading;
 using System.Threading.Tasks;
-using Functional.Core;
+using Meigs2.Functional;
 using MediatR;
+using Meigs2.Functional.Results;
 
 namespace Migratic.Core.Commands;
 

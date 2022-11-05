@@ -1,5 +1,5 @@
 using FluentAssertions;
-using Functional.Core;
+using Meigs2.Functional;
 
 namespace Migratic.Core.Tests.Unit;
 

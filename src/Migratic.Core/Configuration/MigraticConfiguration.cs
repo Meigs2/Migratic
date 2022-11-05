@@ -6,7 +6,7 @@ using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 using Dapper;
-using Functional.Core;
+using Meigs2.Functional;
 using Microsoft.Extensions.DependencyInjection;
 using Migratic.Core.Models;
 

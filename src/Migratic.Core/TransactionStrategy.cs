@@ -1,4 +1,4 @@
-using Functional.Core.Enumeration;
+using Meigs2.Functional.Enumeration;
 
 namespace Migratic.Core;
 

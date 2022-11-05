@@ -6,7 +6,6 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using Dapper;
-using Functional.Core;
 using Unit = System.ValueTuple;
 
 namespace Migratic.Core

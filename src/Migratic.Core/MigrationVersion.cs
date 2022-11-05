@@ -1,6 +1,8 @@
 ﻿using System;
-using Functional.Core;
-using static Functional.Core.F;
+using Meigs2.Functional;
+using Meigs2.Functional.BuiltInTypes;
+using Meigs2.Functional.Results;
+using static Meigs2.Functional.F;
 
 namespace Migratic.Core;
 
@@ -30,21 +32,21 @@ public record MigrationVersion : IComparable<MigrationVersion>
                                .Match(Some: v => IsValidMajorVersion(v)
                                                 .Bind(IsValidMinorVersion)
                                                 .Bind(IsValidPatchVersion),
-                                      None: () => Invalid("Version cannot be null"));
+                                      None: () => Validation<MigrationVersion>.Fail("Version cannot be null"));
     }
 
     private static Validation<MigrationVersion> IsValidMajorVersion(MigrationVersion migrationVersion) =>
         migrationVersion.Major >= 0
-            ? Valid(migrationVersion)
-            : Invalid($"Major version must be greater than or equal to 0, but was {migrationVersion.Major}");
+            ? migrationVersion
+            : Validation<MigrationVersion>.Fail($"Major version must be greater than or equal to 0, but was {migrationVersion.Major}");
 
     private static Validation<MigrationVersion> IsValidMinorVersion(MigrationVersion minor) => minor.Minor.Match(
-        Some: m => m >= 0 ? Valid(minor) : Invalid($"Minor version must be greater than or equal to 0, but was {m}"),
-        None: () => Valid(minor));
+        Some: m => m >= 0 ? minor : Validation<MigrationVersion>.Fail($"Minor version must be greater than or equal to 0, but was {m}"),
+        None: () => minor);
 
     private static Validation<MigrationVersion> IsValidPatchVersion(MigrationVersion patch) => patch.Patch.Match(
-        Some: p => p >= 0 ? Valid(patch) : Invalid($"Patch version must be greater than or equal to 0, but was {p}"),
-        None: () => Valid(patch));
+        Some: p => p >= 0 ? patch : Validation<MigrationVersion>.Fail($"Patch version must be greater than or equal to 0, but was {p}"),
+        None: () => patch);
 
     public static Option<MigrationVersion> FromString(string value, MigraticConfiguration configuration)
     {

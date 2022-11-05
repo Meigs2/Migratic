@@ -4,7 +4,8 @@ using System.Data;
 using System.Linq;
 using System.Threading.Tasks;
 using Dapper;
-using Functional.Core;
+using Meigs2.Functional;
+using Meigs2.Functional.Results;
 using Migratic.Core;
 
 namespace Migratic.Postgresql;
